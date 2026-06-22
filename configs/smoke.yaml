@@ -1,0 +1,24 @@
+# Smoke test: real Qwen3-0.6B model, tiny run, synthetic data.
+# Proves the full training loop (optimizer, autocast, checkpoint, throughput)
+# works on the actual GPU before committing to a long run. ~30s on one B200.
+#   CUDA_VISIBLE_DEVICES=5 .venv/bin/python -m src.train.train --config configs/smoke.yaml
+
+model:
+  max_seq_len: 1024          # shorter for speed; real model dims otherwise
+
+data_dirs:
+  - data/smoke
+
+micro_batch_size: 8
+grad_accum_steps: 1
+
+max_steps: 30
+warmup_steps: 5
+lr: 3.0e-4
+min_lr: 3.0e-5
+weight_decay: 0.1
+grad_clip: 1.0
+
+out_dir: checkpoints/smoke
+log_interval: 5
+save_interval: 1000          # don't checkpoint during smoke
