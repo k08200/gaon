@@ -2,11 +2,11 @@ __pycache__/
 *.pyc
 .venv/
 venv/
-data/
-checkpoints/
+/data/
+/checkpoints/
+/eval_results/
 *.bin
 *.pt
 *.safetensors
 .DS_Store
 wandb/
-eval_results/
