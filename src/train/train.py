@@ -1,0 +1,166 @@
+"""Pretraining loop for the Qwen3-style model.
+
+Single-GPU and multi-GPU (FSDP via torchrun) capable. Start small to validate the
+full pipeline, then scale `target_tokens` and GPU count without code changes.
+
+Single GPU:
+    python -m src.train.train --config configs/qwen3_0.6b.yaml
+
+Multi-GPU (e.g. 5x A100):
+    torchrun --standalone --nproc_per_node=5 -m src.train.train \
+        --config configs/qwen3_0.6b.yaml
+"""
+
+from __future__ import annotations
+
+import argparse
+import math
+import os
+import time
+
+import torch
+import yaml
+
+from ..data.loader import PackedDataset
+from ..model import ModelConfig, Qwen3
+
+
+def is_dist() -> bool:
+    return int(os.environ.get("RANK", -1)) != -1
+
+
+def setup_dist():
+    if not is_dist():
+        return 0, 0, 1
+    import torch.distributed as dist
+
+    dist.init_process_group(backend="nccl")
+    rank = int(os.environ["RANK"])
+    local_rank = int(os.environ["LOCAL_RANK"])
+    world = int(os.environ["WORLD_SIZE"])
+    torch.cuda.set_device(local_rank)
+    return rank, local_rank, world
+
+
+def get_lr(step: int, cfg: dict) -> float:
+    warmup, total = cfg["warmup_steps"], cfg["max_steps"]
+    lr, min_lr = cfg["lr"], cfg["min_lr"]
+    if step < warmup:
+        return lr * (step + 1) / warmup
+    if step >= total:
+        return min_lr
+    ratio = (step - warmup) / (total - warmup)
+    return min_lr + 0.5 * (1 + math.cos(math.pi * ratio)) * (lr - min_lr)
+
+
+def wrap_fsdp(model, local_rank):
+    from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+    from torch.distributed.fsdp import MixedPrecision, ShardingStrategy
+    from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
+    import functools
+    from ..model.qwen3 import Block
+
+    mp = MixedPrecision(
+        param_dtype=torch.bfloat16,
+        reduce_dtype=torch.bfloat16,
+        buffer_dtype=torch.bfloat16,
+    )
+    policy = functools.partial(transformer_auto_wrap_policy, transformer_layer_cls={Block})
+    return FSDP(
+        model,
+        auto_wrap_policy=policy,
+        mixed_precision=mp,
+        sharding_strategy=ShardingStrategy.FULL_SHARD,
+        device_id=local_rank,
+        use_orig_params=True,
+    )
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--config", required=True)
+    args = ap.parse_args()
+    with open(args.config) as f:
+        cfg = yaml.safe_load(f)
+
+    rank, local_rank, world = setup_dist()
+    master = rank == 0
+    device = f"cuda:{local_rank}" if torch.cuda.is_available() else "cpu"
+    torch.manual_seed(1337 + rank)
+    if device.startswith("cuda"):
+        torch.set_float32_matmul_precision("high")
+
+    mcfg = ModelConfig(**cfg.get("model", {}))
+    model = Qwen3(mcfg).to(device)
+    if master:
+        print(f"model params: {model.num_params() / 1e6:.1f}M")
+
+    if is_dist():
+        model = wrap_fsdp(model, local_rank)
+
+    opt = torch.optim.AdamW(
+        model.parameters(),
+        lr=cfg["lr"],
+        betas=(0.9, 0.95),
+        weight_decay=cfg["weight_decay"],
+        fused=device.startswith("cuda"),
+    )
+
+    data = PackedDataset(cfg["data_dirs"], mcfg.max_seq_len, device=device)
+    micro_bs = cfg["micro_batch_size"]
+    grad_accum = cfg["grad_accum_steps"]
+    tokens_per_step = micro_bs * grad_accum * world * mcfg.max_seq_len
+    ctx = torch.autocast(device_type="cuda", dtype=torch.bfloat16) if device.startswith("cuda") else _null()
+
+    os.makedirs(cfg["out_dir"], exist_ok=True)
+    t0 = time.time()
+    for step in range(cfg["max_steps"]):
+        lr = get_lr(step, cfg)
+        for g in opt.param_groups:
+            g["lr"] = lr
+
+        opt.zero_grad(set_to_none=True)
+        loss_accum = 0.0
+        for _ in range(grad_accum):
+            x, y = data.get_batch(micro_bs)
+            with ctx:
+                _, loss = model(x, y)
+                loss = loss / grad_accum
+            loss.backward()
+            loss_accum += loss.item()
+        if hasattr(model, "clip_grad_norm_"):
+            model.clip_grad_norm_(cfg["grad_clip"])
+        else:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), cfg["grad_clip"])
+        opt.step()
+
+        if master and step % cfg["log_interval"] == 0:
+            dt = time.time() - t0
+            tps = tokens_per_step * (step + 1) / dt
+            print(f"step {step:6d} | loss {loss_accum:.4f} | lr {lr:.2e} | "
+                  f"{tps/1e3:.1f}k tok/s | {step * tokens_per_step / 1e9:.2f}B tok")
+
+        if master and step > 0 and step % cfg["save_interval"] == 0:
+            save(model, mcfg, cfg, step)
+
+    if master:
+        save(model, mcfg, cfg, cfg["max_steps"])
+    if is_dist():
+        import torch.distributed as dist
+        dist.destroy_process_group()
+
+
+def save(model, mcfg, cfg, step):
+    sd = model.state_dict()
+    path = os.path.join(cfg["out_dir"], f"ckpt_{step}.pt")
+    torch.save({"model": sd, "config": mcfg.__dict__, "step": step}, path)
+    print(f"saved checkpoint -> {path}")
+
+
+class _null:
+    def __enter__(self): return self
+    def __exit__(self, *a): return False
+
+
+if __name__ == "__main__":
+    main()
