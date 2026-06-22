@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Turnkey pipeline for the NHN GPU box. Run stages individually or all in order.
+#   bash scripts/run_nhn.sh gpus        # detect A100/H100 + recommend batch size
 #   bash scripts/run_nhn.sh sanity      # CPU correctness check (seconds)
 #   bash scripts/run_nhn.sh data        # build validation mixture (~12B tok)
 #   bash scripts/run_nhn.sh pretrain    # FSDP pretraining on $NGPU GPUs
@@ -17,6 +18,8 @@ CKPT_DIR="${CKPT_DIR:-checkpoints/qwen3_0.6b}"
 
 stage="${1:-help}"
 case "$stage" in
+  gpus)
+    python scripts/gpu_info.py --model "${2:-0.6b}" ;;
   sanity)
     python scripts/sanity_check.py ;;
   data)

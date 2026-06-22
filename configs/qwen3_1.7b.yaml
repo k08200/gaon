@@ -1,0 +1,34 @@
+# Qwen3-1.7B from-scratch pretraining config (rung 2 — scale-up).
+# Same architecture/code as 0.6B, only dimensions + batch differ.
+# Run `python scripts/gpu_info.py --model 1.7b` to pick micro_batch_size.
+
+model:
+  hidden_size: 2048           # Qwen3-1.7B
+  intermediate_size: 6144
+  num_layers: 28
+  num_attn_heads: 16
+  num_kv_heads: 8
+  head_dim: 128
+  max_seq_len: 4096
+
+data_dirs:
+  - data/fineweb_edu
+  - data/fineweb_kor
+  - data/the_stack
+
+# bigger model -> smaller micro batch, more accumulation
+micro_batch_size: 8         # A100/H100 80GB; halve for 40GB
+grad_accum_steps: 16
+# 5 GPUs: 8*16*5*4096 = ~2.6M tokens/step
+
+# 1.7B is compute-optimal around ~35B tokens; over-train to 200B+ for quality.
+max_steps: 80000
+warmup_steps: 2000
+lr: 2.5e-4
+min_lr: 2.5e-5
+weight_decay: 0.1
+grad_clip: 1.0
+
+out_dir: checkpoints/qwen3_1.7b
+log_interval: 10
+save_interval: 2000
