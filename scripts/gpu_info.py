@@ -13,8 +13,8 @@ import subprocess
 # Rough safe per-GPU micro_batch at seq_len=4096, bf16, with activation ckpt.
 # Keyed by (model, gpu_mem_GB_bucket). Conservative; bump if no OOM.
 RECO = {
-    "0.6b": {40: 8, 80: 16, 94: 24},
-    "1.7b": {40: 4, 80: 8, 94: 12},
+    "0.6b": {40: 8, 80: 16, 94: 24, 180: 64},
+    "1.7b": {40: 4, 80: 8, 94: 12, 180: 32},
 }
 
 
@@ -48,7 +48,7 @@ def via_smi():
 
 
 def bucket(mem_gb: int) -> int:
-    for b in (94, 80, 40):
+    for b in (180, 94, 80, 40):
         if mem_gb >= b - 4:
             return b
     return 40
@@ -67,19 +67,20 @@ def main() -> None:
     print(f"detected {len(gpus)} GPU(s):")
     mems = []
     for i, (name, mem) in enumerate(gpus):
-        gen = "H100" if "H100" in name else "A100" if "A100" in name else "?"
+        gen = ("B200" if "B200" in name else "H100" if "H100" in name
+               else "A100" if "A100" in name else "?")
         print(f"  [{i}] {name}  {mem}GB  ({gen})")
         mems.append(mem)
 
     b = bucket(min(mems))
     mb = RECO[args.model][b]
-    fp8 = all("H100" in n for n, _ in gpus)
+    fp8 = all(("H100" in n or "B200" in n) for n, _ in gpus)
     print()
     print(f"recommended for {args.model} @ {b}GB-class:")
     print(f"  micro_batch_size: {mb}")
     print(f"  NGPU={len(gpus)}  -> set CUDA_VISIBLE_DEVICES accordingly")
     if fp8:
-        print("  note: all H100 — FP8 available later for ~2x speedup (bf16 first).")
+        print("  note: FP8 (H100/B200) available later for ~2x speedup (bf16 first).")
 
 
 if __name__ == "__main__":
