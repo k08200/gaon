@@ -109,4 +109,13 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    import sys
+
     main()
+    # The HF fast tokenizer's Rust threads can segfault during interpreter
+    # finalization (PyGILState_Release), returning a non-zero code even though
+    # all shards are already on disk. Skip finalization with a clean exit so
+    # downstream chaining (&&, auto_run) sees success.
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(0)
