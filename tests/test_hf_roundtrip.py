@@ -15,7 +15,7 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.model import ModelConfig, Qwen3  # noqa: E402
+from src.model import ModelConfig, Gaon  # noqa: E402
 from src.posttrain.sft import to_hf       # noqa: E402
 
 
@@ -26,7 +26,7 @@ def main() -> None:
         num_layers=4, num_attn_heads=8, num_kv_heads=4, head_dim=32,
         max_seq_len=64,
     )
-    ours = Qwen3(cfg).eval()
+    ours = Gaon(cfg).eval()
 
     x = torch.randint(0, cfg.vocab_size, (1, 16))
     with torch.no_grad():

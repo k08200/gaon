@@ -139,7 +139,7 @@ class Block(nn.Module):
         return x
 
 
-class Qwen3(nn.Module):
+class Gaon(nn.Module):
     def __init__(self, cfg: ModelConfig) -> None:
         super().__init__()
         self.cfg = cfg

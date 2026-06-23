@@ -10,7 +10,7 @@ import argparse
 
 import torch
 
-from ..model import ModelConfig, Qwen3
+from ..model import ModelConfig, Gaon
 
 
 def main() -> None:
@@ -28,7 +28,7 @@ def main() -> None:
     device = "cuda" if torch.cuda.is_available() else "cpu"
     ck = torch.load(args.ckpt, map_location=device)
     cfg = ModelConfig(**ck["config"])
-    model = Qwen3(cfg).to(device).eval()
+    model = Gaon(cfg).to(device).eval()
     # strip FSDP/DDP prefixes if present
     sd = {k.replace("_orig_mod.", "").replace("module.", ""): v for k, v in ck["model"].items()}
     model.load_state_dict(sd, strict=False)

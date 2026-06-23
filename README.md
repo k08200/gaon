@@ -1,6 +1,7 @@
-# frontier-llm
+# Gaon (가온)
 
-A real LLM, built from scratch. Rung 1 of the ladder to a frontier lab.
+A real LLM, built from scratch. *Gaon* — pure Korean for "center/core."
+Rung 1 of the ladder to a frontier lab.
 
 **Now:** train a Qwen3-0.6B-architecture model from scratch (full pipeline you own).
 **Next:** scale the *same code* to 1.7B → 7B → larger as compute/capital grow.
@@ -14,14 +15,14 @@ architecture, same pipeline; only scale (and money) differ.
 ## Architecture (faithful to Qwen3)
 Decoder-only · RMSNorm (pre-norm) · RoPE · Grouped-Query Attention · **QK-Norm**
 (Qwen3-specific per-head q/k RMSNorm) · SwiGLU · tied embeddings. See
-[`src/model/qwen3.py`](src/model/qwen3.py). Defaults replicate Qwen3-0.6B exactly
+[`src/model/gaon.py`](src/model/gaon.py). Defaults replicate Qwen3-0.6B exactly
 (verified 596M params), so we reuse its tokenizer and benchmark against the
 official checkpoint.
 
 ## Layout
 ```
-configs/            training configs (start: qwen3_0.6b.yaml)
-src/model/          Qwen3 architecture (config.py, qwen3.py)
+configs/            training configs (start: gaon_0.6b.yaml)
+src/model/          Gaon model — Qwen3-compatible architecture (config.py, gaon.py)
 src/data/           prepare.py (download+tokenize+pack), loader.py (mmap batches)
 src/train/          train.py (single-GPU + FSDP via torchrun)
 src/posttrain/      sft.py (TRL SFT + our->HF weight map), dpo.py (TRL DPO)

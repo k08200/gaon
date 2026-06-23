@@ -2,14 +2,14 @@
 # Hands-off orchestrator: wait for data prep to finish, verify shards, then
 # launch the 5-GPU validation training. Designed to run under nohup so the whole
 # data -> train pipeline completes unattended.
-#   GPUS=3,4,5,6,7 NGPU=5 CONFIG=configs/qwen3_0.6b_val.yaml \
+#   GPUS=3,4,5,6,7 NGPU=5 CONFIG=configs/gaon_0.6b_val.yaml \
 #     nohup bash scripts/auto_run.sh > logs/auto_run.log 2>&1 &
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
 GPUS="${GPUS:-3,4,5,6,7}"
 NGPU="${NGPU:-5}"
-CONFIG="${CONFIG:-configs/qwen3_0.6b_val.yaml}"
+CONFIG="${CONFIG:-configs/gaon_0.6b_val.yaml}"
 PY=".venv/bin/python"
 
 echo "[auto $(date +%H:%M:%S)] waiting for data prep to finish..."

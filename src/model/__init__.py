@@ -1,4 +1,4 @@
 from .config import ModelConfig
-from .qwen3 import Qwen3
+from .gaon import Gaon
 
-__all__ = ["ModelConfig", "Qwen3"]
+__all__ = ["ModelConfig", "Gaon"]

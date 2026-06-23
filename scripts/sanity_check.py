@@ -14,7 +14,7 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.model import ModelConfig, Qwen3  # noqa: E402
+from src.model import ModelConfig, Gaon  # noqa: E402
 
 
 def tiny_cfg() -> ModelConfig:
@@ -27,7 +27,7 @@ def tiny_cfg() -> ModelConfig:
 
 
 def test_shapes(cfg):
-    m = Qwen3(cfg).eval()
+    m = Gaon(cfg).eval()
     x = torch.randint(0, cfg.vocab_size, (2, 16))
     logits, loss = m(x)
     assert logits.shape == (2, 1, cfg.vocab_size), logits.shape
@@ -38,7 +38,7 @@ def test_shapes(cfg):
 
 
 def test_causality(cfg):
-    m = Qwen3(cfg).eval()
+    m = Gaon(cfg).eval()
     x = torch.randint(0, cfg.vocab_size, (1, 16))
     with torch.no_grad():
         full = m(x, x)[0]               # (1, 16, V)
@@ -52,7 +52,7 @@ def test_causality(cfg):
 
 def test_overfit(cfg):
     torch.manual_seed(0)
-    m = Qwen3(cfg).train()
+    m = Gaon(cfg).train()
     opt = torch.optim.AdamW(m.parameters(), lr=1e-3)
     x = torch.randint(0, cfg.vocab_size, (4, 32))
     y = torch.randint(0, cfg.vocab_size, (4, 32))
@@ -69,7 +69,7 @@ def test_overfit(cfg):
 
 def test_param_count():
     cfg = ModelConfig()
-    m = Qwen3(cfg)
+    m = Gaon(cfg)
     n = m.num_params()
     print(f"  [info] full Qwen3-0.6B config params: {n/1e6:.1f}M")
     assert 550e6 < n < 800e6, f"unexpected param count: {n}"

@@ -13,8 +13,8 @@ cd "$(dirname "$0")/.."
 # --- box config (override via env) ---
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,6,7}"   # NHN available GPUs
 NGPU="${NGPU:-5}"
-CONFIG="${CONFIG:-configs/qwen3_0.6b.yaml}"
-CKPT_DIR="${CKPT_DIR:-checkpoints/qwen3_0.6b}"
+CONFIG="${CONFIG:-configs/gaon_0.6b.yaml}"
+CKPT_DIR="${CKPT_DIR:-checkpoints/gaon_0.6b}"
 
 stage="${1:-help}"
 case "$stage" in

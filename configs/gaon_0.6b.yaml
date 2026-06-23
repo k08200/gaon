@@ -29,6 +29,6 @@ weight_decay: 0.1
 grad_clip: 1.0
 
 # --- io ---
-out_dir: checkpoints/qwen3_0.6b
+out_dir: checkpoints/gaon_0.6b
 log_interval: 10
 save_interval: 2000

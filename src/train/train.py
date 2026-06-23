@@ -22,7 +22,7 @@ import torch
 import yaml
 
 from ..data.loader import PackedDataset
-from ..model import ModelConfig, Qwen3
+from ..model import ModelConfig, Gaon
 
 
 def is_dist() -> bool:
@@ -58,7 +58,7 @@ def wrap_fsdp(model, local_rank):
     from torch.distributed.fsdp import MixedPrecision, ShardingStrategy
     from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
     import functools
-    from ..model.qwen3 import Block
+    from ..model.gaon import Block
 
     mp = MixedPrecision(
         param_dtype=torch.bfloat16,
@@ -91,7 +91,7 @@ def main() -> None:
         torch.set_float32_matmul_precision("high")
 
     mcfg = ModelConfig(**cfg.get("model", {}))
-    model = Qwen3(mcfg).to(device)
+    model = Gaon(mcfg).to(device)
     if master:
         print(f"model params: {model.num_params() / 1e6:.1f}M")
 

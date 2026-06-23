@@ -21,6 +21,6 @@ min_lr: 3.0e-5
 weight_decay: 0.1
 grad_clip: 1.0
 
-out_dir: checkpoints/qwen3_0.6b_val
+out_dir: checkpoints/gaon_0.6b_val
 log_interval: 10
 save_interval: 1500
