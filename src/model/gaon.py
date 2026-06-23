@@ -154,6 +154,10 @@ class Gaon(nn.Module):
         self.register_buffer("rope_cos", cos, persistent=False)
         self.register_buffer("rope_sin", sin, persistent=False)
 
+        # memory knobs (set from the training config; let small GPUs fit big models)
+        self.grad_checkpoint = False   # recompute block activations in backward
+        self.loss_chunk_size = 4096    # cap on LM-head logit rows held at once
+
         self.apply(self._init_weights)
         # scaled init for residual projections (GPT-2 style)
         for name, p in self.named_parameters():
@@ -173,7 +177,7 @@ class Gaon(nn.Module):
         return F.cross_entropy(logits.float(), ts, ignore_index=-100, reduction="sum")
 
     def loss_from_hidden(self, x: torch.Tensor, targets: torch.Tensor,
-                         chunk_size: int = 4096) -> torch.Tensor:
+                         chunk_size: int | None = None) -> torch.Tensor:
         """Memory-efficient cross-entropy.
 
         The LM-head logits tensor is (B*T, vocab=151936) — at batch 16 / seq 4096
@@ -185,6 +189,7 @@ class Gaon(nn.Module):
         """
         from torch.utils.checkpoint import checkpoint
 
+        chunk_size = chunk_size or self.loss_chunk_size
         h = x.reshape(-1, x.size(-1))
         t = targets.reshape(-1)
         n = (t != -100).sum().clamp(min=1)
@@ -197,8 +202,13 @@ class Gaon(nn.Module):
                 return_logits: bool = False):
         x = self.embed(idx)
         rope = (self.rope_cos, self.rope_sin)
-        for block in self.blocks:
-            x = block(x, rope)
+        if self.grad_checkpoint and self.training:
+            from torch.utils.checkpoint import checkpoint
+            for block in self.blocks:
+                x = checkpoint(block, x, rope, use_reentrant=False)
+        else:
+            for block in self.blocks:
+                x = block(x, rope)
         x = self.norm(x)
 
         if targets is None:

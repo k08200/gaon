@@ -1,21 +1,27 @@
-# Gaon-0.6B on a FREE Colab GPU (T4 16GB).
-# T4 has no native bf16 -> use fp16. Settings are conservative to fit 16GB;
-# if you hit OOM, drop micro_batch_size to 2. If Colab gives an A100, set dtype: bf16.
+# Gaon-0.6B on a FREE Colab/Kaggle GPU (T4 16GB).
+# Fits 0.6B on 16GB via: gradient checkpointing + 8-bit AdamW + chunked CE.
+# Slower (recompute) but memory-safe — exactly the trade when time is free.
+# T4 has no native bf16 -> fp16. If Colab gives an A100, set dtype: bf16.
 
 model:
-  max_seq_len: 1024          # shorter than the full run for speed + to fit T4
+  max_seq_len: 1024
 
 dtype: fp16                  # T4: fp16 (bf16 not supported on Turing)
+optimizer: adamw8bit         # bitsandbytes — optimizer memory 4.8GB -> 1.2GB
+grad_checkpoint: true        # recompute activations in backward (big memory cut)
+loss_chunk_size: 1024        # cap LM-head logit rows (vocab=151936 is huge)
 
 data_dirs:
   - data/fineweb_edu
 
-micro_batch_size: 4
-grad_accum_steps: 16
-# 1 GPU: 4*16*1*1024 = ~65k tokens/step
+micro_batch_size: 8
+grad_accum_steps: 8
+# 1 GPU: 8*8*1*1024 = ~65k tokens/step
+# memory ~8GB: model 2.4 + grad 2.4 + 8bit-adam 1.2 + ckpt-acts ~1 + logits ~0.9
 
-max_steps: 100000           # runs until you stop / Colab disconnects; resume continues
-warmup_steps: 100
+# 0.6B Chinchilla-optimal ~= 12B tokens. 12e9 / 65k ~= 185k steps.
+max_steps: 185000
+warmup_steps: 200
 lr: 3.0e-4
 min_lr: 3.0e-5
 weight_decay: 0.1
@@ -23,7 +29,8 @@ grad_clip: 1.0
 
 out_dir: checkpoints/gaon_colab
 log_interval: 10
-save_interval: 200          # checkpoint often — Colab can disconnect anytime
+save_interval: 200          # checkpoint often — free GPUs disconnect anytime
 
-# To continue from a saved checkpoint (e.g. mounted from Drive), set:
+# To persist + resume across sessions (recommended), point these at Drive:
+# out_dir: /content/drive/MyDrive/gaon
 # resume_from: /content/drive/MyDrive/gaon/latest.pt

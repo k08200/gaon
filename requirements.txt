@@ -8,6 +8,9 @@ transformers>=4.51   # Qwen3 support
 datasets>=2.20
 huggingface_hub>=0.24
 
+# Memory-efficient training on small GPUs (8-bit AdamW)
+bitsandbytes>=0.43
+
 # Post-training (SFT/DPO) — used in posttrain/, optional for pretraining
 trl>=0.9
 peft>=0.11

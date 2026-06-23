@@ -53,6 +53,24 @@ def get_lr(step: int, cfg: dict) -> float:
     return min_lr + 0.5 * (1 + math.cos(math.pi * ratio)) * (lr - min_lr)
 
 
+def build_optimizer(model, cfg, device, master):
+    """AdamW, or 8-bit AdamW (bitsandbytes) to cut optimizer memory ~4x on small GPUs."""
+    lr, wd = cfg["lr"], cfg["weight_decay"]
+    if cfg.get("optimizer", "adamw") == "adamw8bit":
+        try:
+            import bitsandbytes as bnb
+            if master:
+                print("optimizer: 8-bit AdamW (bitsandbytes)")
+            return bnb.optim.AdamW8bit(model.parameters(), lr=lr, betas=(0.9, 0.95), weight_decay=wd)
+        except ImportError:
+            if master:
+                print("bitsandbytes not installed -> falling back to fp32 AdamW")
+    return torch.optim.AdamW(
+        model.parameters(), lr=lr, betas=(0.9, 0.95), weight_decay=wd,
+        fused=device.startswith("cuda"),
+    )
+
+
 def wrap_fsdp(model, local_rank):
     from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
     from torch.distributed.fsdp import MixedPrecision, ShardingStrategy
@@ -92,8 +110,11 @@ def main() -> None:
 
     mcfg = ModelConfig(**cfg.get("model", {}))
     model = Gaon(mcfg).to(device)
+    model.grad_checkpoint = cfg.get("grad_checkpoint", False)
+    model.loss_chunk_size = cfg.get("loss_chunk_size", 4096)
     if master:
-        print(f"model params: {model.num_params() / 1e6:.1f}M")
+        print(f"model params: {model.num_params() / 1e6:.1f}M | "
+              f"grad_checkpoint={model.grad_checkpoint} chunk={model.loss_chunk_size}")
 
     # --- resume: load weights into the plain model BEFORE FSDP wrap ---
     start_step = 0
@@ -111,13 +132,7 @@ def main() -> None:
     if is_dist():
         model = wrap_fsdp(model, local_rank)
 
-    opt = torch.optim.AdamW(
-        model.parameters(),
-        lr=cfg["lr"],
-        betas=(0.9, 0.95),
-        weight_decay=cfg["weight_decay"],
-        fused=device.startswith("cuda"),
-    )
+    opt = build_optimizer(model, cfg, device, master)
 
     # optimizer state only resumes in the single-process case (Colab/1-GPU);
     # under FSDP it is sharded and re-initialized (warmup smooths the restart).
