@@ -68,23 +68,52 @@ def to_hf(ckpt_path: str, tokenizer_id: str):
     return hf
 
 
+def _alpaca_to_messages(ex):
+    """Normalize an instruction/input/output row to chat 'messages' format."""
+    instr = (ex.get("instruction") or "").strip()
+    inp = (ex.get("input") or "").strip()
+    out = (ex.get("output") or ex.get("response") or "").strip()
+    user = instr if not inp else f"{instr}\n\n{inp}"
+    return {"messages": [
+        {"role": "user", "content": user},
+        {"role": "assistant", "content": out},
+    ]}
+
+
+def build_sft_dataset(en_name: str, ko_name: str):
+    """Bilingual SFT mix: English chat (messages) + Korean instruct (alpaca)."""
+    from datasets import concatenate_datasets, load_dataset
+
+    parts = []
+    if en_name:
+        en = load_dataset(en_name, split="train_sft").select_columns(["messages"])
+        parts.append(en)
+    if ko_name:
+        ko = load_dataset(ko_name, split="train")
+        ko = ko.map(_alpaca_to_messages, remove_columns=ko.column_names)
+        parts.append(ko)
+    ds = concatenate_datasets(parts) if len(parts) > 1 else parts[0]
+    print(f"SFT dataset: {len(ds):,} examples (en={en_name}, ko={ko_name})")
+    return ds.shuffle(seed=42)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--ckpt", required=True)
-    ap.add_argument("--dataset", default="HuggingFaceH4/ultrachat_200k")
+    ap.add_argument("--en-dataset", default="HuggingFaceH4/ultrachat_200k")
+    ap.add_argument("--ko-dataset", default="nlpai-lab/kullm-v2")
     ap.add_argument("--out", default="checkpoints/sft")
     ap.add_argument("--tokenizer", default="Qwen/Qwen3-0.6B")
     ap.add_argument("--epochs", type=float, default=1.0)
     ap.add_argument("--lr", type=float, default=1e-5)
     args = ap.parse_args()
 
-    from datasets import load_dataset
     from transformers import AutoTokenizer
     from trl import SFTConfig, SFTTrainer
 
     tok = AutoTokenizer.from_pretrained(args.tokenizer)
     model = to_hf(args.ckpt, args.tokenizer)
-    ds = load_dataset(args.dataset, split="train_sft")
+    ds = build_sft_dataset(args.en_dataset, args.ko_dataset)
 
     trainer = SFTTrainer(
         model=model,
