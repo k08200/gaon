@@ -3,6 +3,9 @@
 A real LLM, built from scratch. *Gaon* — pure Korean for "center/core."
 Rung 1 of the ladder to a frontier lab.
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/k08200/gaon/blob/main/notebooks/gaon_colab.ipynb)
+— train on a free GPU.
+
 **Now:** train a Qwen3-0.6B-architecture model from scratch (full pipeline you own).
 **Next:** scale the *same code* to 1.7B → 7B → larger as compute/capital grow.
 **Endgame:** frontier. This repo is where you earn the credibility + skill to get there.

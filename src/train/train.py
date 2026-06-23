@@ -131,7 +131,15 @@ def main() -> None:
     micro_bs = cfg["micro_batch_size"]
     grad_accum = cfg["grad_accum_steps"]
     tokens_per_step = micro_bs * grad_accum * world * mcfg.max_seq_len
-    ctx = torch.autocast(device_type="cuda", dtype=torch.bfloat16) if device.startswith("cuda") else _null()
+
+    # precision: bf16 (A100/H100/B200), fp16 (T4/older, needs GradScaler), or fp32.
+    dtype_name = cfg.get("dtype", "bf16")
+    amp_dtype = {"bf16": torch.bfloat16, "fp16": torch.float16, "fp32": torch.float32}[dtype_name]
+    use_amp = device.startswith("cuda") and amp_dtype != torch.float32
+    ctx = torch.autocast(device_type="cuda", dtype=amp_dtype) if use_amp else _null()
+    scaler = torch.amp.GradScaler("cuda", enabled=(dtype_name == "fp16"))
+    if master:
+        print(f"precision: {dtype_name}")
 
     os.makedirs(cfg["out_dir"], exist_ok=True)
     t0 = time.time()
@@ -147,13 +155,15 @@ def main() -> None:
             with ctx:
                 _, loss = model(x, y)
                 loss = loss / grad_accum
-            loss.backward()
+            scaler.scale(loss).backward()
             loss_accum += loss.item()
+        scaler.unscale_(opt)
         if hasattr(model, "clip_grad_norm_"):
             model.clip_grad_norm_(cfg["grad_clip"])
         else:
             torch.nn.utils.clip_grad_norm_(model.parameters(), cfg["grad_clip"])
-        opt.step()
+        scaler.step(opt)
+        scaler.update()
 
         if master and step % cfg["log_interval"] == 0:
             dt = time.time() - t0

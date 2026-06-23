@@ -1,0 +1,29 @@
+# Gaon-0.6B on a FREE Colab GPU (T4 16GB).
+# T4 has no native bf16 -> use fp16. Settings are conservative to fit 16GB;
+# if you hit OOM, drop micro_batch_size to 2. If Colab gives an A100, set dtype: bf16.
+
+model:
+  max_seq_len: 1024          # shorter than the full run for speed + to fit T4
+
+dtype: fp16                  # T4: fp16 (bf16 not supported on Turing)
+
+data_dirs:
+  - data/fineweb_edu
+
+micro_batch_size: 4
+grad_accum_steps: 16
+# 1 GPU: 4*16*1*1024 = ~65k tokens/step
+
+max_steps: 100000           # runs until you stop / Colab disconnects; resume continues
+warmup_steps: 100
+lr: 3.0e-4
+min_lr: 3.0e-5
+weight_decay: 0.1
+grad_clip: 1.0
+
+out_dir: checkpoints/gaon_colab
+log_interval: 10
+save_interval: 200          # checkpoint often — Colab can disconnect anytime
+
+# To continue from a saved checkpoint (e.g. mounted from Drive), set:
+# resume_from: /content/drive/MyDrive/gaon/latest.pt
