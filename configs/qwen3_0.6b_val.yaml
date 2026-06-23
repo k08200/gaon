@@ -10,9 +10,9 @@ data_dirs:
   - data/fineweb_edu
   - data/fineweb_kor
 
-micro_batch_size: 32
-grad_accum_steps: 4
-# 5 GPUs: 32*4*5*4096 = ~2.6M tokens/step  ->  12B / 2.6M ~= 4500 steps
+micro_batch_size: 16        # conservative for unattended run on shared ~86GB-free GPUs
+grad_accum_steps: 8
+# 5 GPUs: 16*8*5*4096 = ~2.6M tokens/step  ->  12B / 2.6M ~= 4500 steps
 
 max_steps: 4500
 warmup_steps: 200
