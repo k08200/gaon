@@ -35,21 +35,31 @@ class RMSNorm(nn.Module):
         return (x * self.weight).to(dtype)
 
 
-def precompute_rope(head_dim: int, max_seq_len: int, theta: float, device=None) -> torch.Tensor:
-    """Return complex rotation factors of shape (max_seq_len, head_dim // 2)."""
+def precompute_rope(head_dim: int, max_seq_len: int, theta: float, device=None):
+    """Return (cos, sin), each (max_seq_len, head_dim), HF/Llama rotate_half style.
+
+    Dimension i is paired with i + head_dim/2 (NOT i with i+1). This matches
+    HuggingFace Qwen3/Llama exactly, so our weights are bit-compatible with HF.
+    """
     inv_freq = 1.0 / (theta ** (torch.arange(0, head_dim, 2, device=device).float() / head_dim))
     t = torch.arange(max_seq_len, device=device).float()
     freqs = torch.outer(t, inv_freq)            # (seq, head_dim/2)
-    return torch.polar(torch.ones_like(freqs), freqs)  # complex64
+    emb = torch.cat([freqs, freqs], dim=-1)     # (seq, head_dim)
+    return emb.cos(), emb.sin()
 
 
-def apply_rope(x: torch.Tensor, rope: torch.Tensor) -> torch.Tensor:
-    """x: (B, n_heads, T, head_dim). rope: (T, head_dim/2) complex."""
-    b, h, t, d = x.shape
-    xc = torch.view_as_complex(x.float().reshape(b, h, t, d // 2, 2))
-    rope = rope[:t].view(1, 1, t, d // 2)
-    out = torch.view_as_real(xc * rope).reshape(b, h, t, d)
-    return out.type_as(x)
+def rotate_half(x: torch.Tensor) -> torch.Tensor:
+    x1, x2 = x.chunk(2, dim=-1)
+    return torch.cat((-x2, x1), dim=-1)
+
+
+def apply_rope(x: torch.Tensor, rope) -> torch.Tensor:
+    """x: (B, n_heads, T, head_dim). rope: (cos, sin) each (T_max, head_dim)."""
+    cos, sin = rope
+    t = x.size(2)
+    cos = cos[:t].view(1, 1, t, -1)
+    sin = sin[:t].view(1, 1, t, -1)
+    return (x * cos) + (rotate_half(x) * sin)
 
 
 def repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
@@ -140,8 +150,9 @@ class Qwen3(nn.Module):
         if cfg.tie_embeddings:
             self.lm_head.weight = self.embed.weight
 
-        rope = precompute_rope(cfg.head_dim, cfg.max_seq_len, cfg.rope_theta)
-        self.register_buffer("rope", rope, persistent=False)
+        cos, sin = precompute_rope(cfg.head_dim, cfg.max_seq_len, cfg.rope_theta)
+        self.register_buffer("rope_cos", cos, persistent=False)
+        self.register_buffer("rope_sin", sin, persistent=False)
 
         self.apply(self._init_weights)
         # scaled init for residual projections (GPT-2 style)
@@ -159,8 +170,9 @@ class Qwen3(nn.Module):
 
     def forward(self, idx: torch.Tensor, targets: torch.Tensor | None = None):
         x = self.embed(idx)
+        rope = (self.rope_cos, self.rope_sin)
         for block in self.blocks:
-            x = block(x, self.rope)
+            x = block(x, rope)
         x = self.norm(x)
 
         if targets is not None:
