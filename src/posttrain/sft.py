@@ -99,7 +99,7 @@ def main() -> None:
             bf16=True,
             logging_steps=20,
             save_strategy="epoch",
-            max_seq_length=2048,
+            max_length=2048,        # trl>=1.x renamed from max_seq_length
         ),
     )
     trainer.train()

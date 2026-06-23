@@ -46,8 +46,7 @@ def main() -> None:
             bf16=True,
             logging_steps=20,
             save_strategy="epoch",
-            max_length=2048,
-            max_prompt_length=1024,
+            max_length=2048,        # trl>=1.x dropped max_prompt_length
         ),
     )
     trainer.train()
