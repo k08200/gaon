@@ -41,10 +41,10 @@ def test_causality(cfg):
     m = Gaon(cfg).eval()
     x = torch.randint(0, cfg.vocab_size, (1, 16))
     with torch.no_grad():
-        full = m(x, x)[0]               # (1, 16, V)
+        full = m(x, x, return_logits=True)[0]               # (1, 16, V)
         x2 = x.clone()
         x2[0, -1] = (x2[0, -1] + 1) % cfg.vocab_size  # perturb last token
-        pert = m(x2, x2)[0]
+        pert = m(x2, x2, return_logits=True)[0]
     diff = (full[0, :-1] - pert[0, :-1]).abs().max().item()
     assert diff < 1e-4, f"past logits changed when future token changed: {diff}"
     print("  [ok] causal masking")

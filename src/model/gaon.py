@@ -168,24 +168,48 @@ class Gaon(nn.Module):
         elif isinstance(module, nn.Embedding):
             nn.init.normal_(module.weight, mean=0.0, std=self.cfg.init_std)
 
-    def forward(self, idx: torch.Tensor, targets: torch.Tensor | None = None):
+    def _chunk_loss(self, hs: torch.Tensor, ts: torch.Tensor) -> torch.Tensor:
+        logits = self.lm_head(hs)
+        return F.cross_entropy(logits.float(), ts, ignore_index=-100, reduction="sum")
+
+    def loss_from_hidden(self, x: torch.Tensor, targets: torch.Tensor,
+                         chunk_size: int = 4096) -> torch.Tensor:
+        """Memory-efficient cross-entropy.
+
+        The LM-head logits tensor is (B*T, vocab=151936) — at batch 16 / seq 4096
+        that's ~20GB in bf16 and ~40GB once cross_entropy upcasts to fp32 for the
+        backward, which OOMs even a 192GB B200. We split the flattened sequence
+        into chunks and gradient-checkpoint each chunk's head+CE, so peak logit
+        memory is only (chunk_size, vocab) and is recomputed in backward. This lets
+        the real runs use much larger batches (far higher throughput).
+        """
+        from torch.utils.checkpoint import checkpoint
+
+        h = x.reshape(-1, x.size(-1))
+        t = targets.reshape(-1)
+        n = (t != -100).sum().clamp(min=1)
+        total = x.new_zeros((), dtype=torch.float32)
+        for hs, ts in zip(h.split(chunk_size), t.split(chunk_size)):
+            total = total + checkpoint(self._chunk_loss, hs, ts, use_reentrant=False)
+        return total / n
+
+    def forward(self, idx: torch.Tensor, targets: torch.Tensor | None = None,
+                return_logits: bool = False):
         x = self.embed(idx)
         rope = (self.rope_cos, self.rope_sin)
         for block in self.blocks:
             x = block(x, rope)
         x = self.norm(x)
 
-        if targets is not None:
-            logits = self.lm_head(x)
-            loss = F.cross_entropy(
-                logits.view(-1, logits.size(-1)),
-                targets.view(-1),
-                ignore_index=-100,
-            )
-            return logits, loss
-        # inference: only compute last position
-        logits = self.lm_head(x[:, -1:, :])
-        return logits, None
+        if targets is None:
+            # inference: only compute last position
+            return self.lm_head(x[:, -1:, :]), None
+
+        loss = self.loss_from_hidden(x, targets)
+        # logits are only materialized when explicitly requested (tests/inspection);
+        # the training loop discards them, so we skip the 20GB+ allocation by default.
+        logits = self.lm_head(x) if return_logits else None
+        return logits, loss
 
     @torch.no_grad()
     def generate(self, idx, max_new_tokens, temperature=1.0, top_k=None):

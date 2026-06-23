@@ -30,7 +30,7 @@ def main() -> None:
 
     x = torch.randint(0, cfg.vocab_size, (1, 16))
     with torch.no_grad():
-        logits_ours, _ = ours(x, x)          # full-sequence logits
+        logits_ours, _ = ours(x, x, return_logits=True)   # full-sequence logits
 
     # save a checkpoint exactly like train.save() does, then convert
     with tempfile.TemporaryDirectory() as d:
