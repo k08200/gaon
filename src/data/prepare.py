@@ -17,6 +17,8 @@ from __future__ import annotations
 import argparse
 import os
 
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "true")  # multi-core batch encoding
+
 import numpy as np
 
 # Curated source registry. (hf_repo, name, text_field)
@@ -61,29 +63,44 @@ def main() -> None:
     buf: list[int] = []
     written = 0
     shard_idx = 0
+    batch: list[str] = []
 
     def flush(tokens: list[int]) -> None:
         nonlocal shard_idx
         path = os.path.join(args.out, f"shard_{shard_idx:05d}.bin")
         np.array(tokens, dtype=DTYPE).tofile(path)
-        print(f"  wrote {path}  ({len(tokens):,} tokens)")
+        print(f"  wrote {path}  ({len(tokens):,} tokens)", flush=True)
         shard_idx += 1
+
+    def drain_shards() -> None:
+        nonlocal written, buf
+        while len(buf) >= args.shard_tokens:
+            flush(buf[: args.shard_tokens])
+            written += args.shard_tokens
+            buf = buf[args.shard_tokens:]
+            print(f"progress: {written:,} / {args.target_tokens:,} tokens", flush=True)
+
+    def encode_batch() -> None:
+        # Batched call -> the Rust fast tokenizer parallelizes across cores.
+        for ids in tok(batch, add_special_tokens=False)["input_ids"]:
+            ids.append(eos)
+            buf.extend(ids)
+        batch.clear()
 
     for ex in ds:
         text = ex.get(field)
         if not text:
             continue
-        ids = tok.encode(text)
-        ids.append(eos)
-        buf.extend(ids)
-        if len(buf) >= args.shard_tokens:
-            flush(buf[: args.shard_tokens])
-            written += args.shard_tokens
-            buf = buf[args.shard_tokens:]
-            print(f"progress: {written:,} / {args.target_tokens:,} tokens")
+        batch.append(text)
+        if len(batch) >= 1000:
+            encode_batch()
+            drain_shards()
             if written >= args.target_tokens:
                 break
 
+    if batch and written < args.target_tokens:
+        encode_batch()
+        drain_shards()
     if buf and written < args.target_tokens:
         flush(buf)
         written += len(buf)
