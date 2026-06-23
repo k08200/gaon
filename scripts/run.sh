@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Turnkey pipeline for the NHN GPU box. Run stages individually or all in order.
+# Turnkey pipeline for the GPU box. Run stages individually or all in order.
 #   bash scripts/run_nhn.sh gpus        # detect A100/H100 + recommend batch size
 #   bash scripts/run_nhn.sh sanity      # CPU correctness check (seconds)
 #   bash scripts/run_nhn.sh data        # build validation mixture (~12B tok)
@@ -11,7 +11,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # --- box config (override via env) ---
-export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,6,7}"   # NHN available GPUs
+export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3,4}"   # available GPUs (set to yours)
 NGPU="${NGPU:-5}"
 CONFIG="${CONFIG:-configs/gaon_0.6b.yaml}"
 CKPT_DIR="${CKPT_DIR:-checkpoints/gaon_0.6b}"
