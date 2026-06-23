@@ -10,9 +10,9 @@ data_dirs:
   - data/fineweb_edu
   - data/fineweb_kor
 
-micro_batch_size: 16        # conservative for unattended run on shared ~86GB-free GPUs
-grad_accum_steps: 8
-# 5 GPUs: 16*8*5*4096 = ~2.6M tokens/step  ->  12B / 2.6M ~= 4500 steps
+micro_batch_size: 4         # LM-head logits (B*seq*151936) dominate memory; batch 16
+grad_accum_steps: 32        # OOM'd on B200 even w/ 84GB free. batch 4 uses ~73GB, 99% util.
+# 5 GPUs: 4*32*5*4096 = ~2.6M tokens/step  ->  12B / 2.6M ~= 4500 steps
 
 max_steps: 4500
 warmup_steps: 200
