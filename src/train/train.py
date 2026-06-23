@@ -95,6 +95,19 @@ def main() -> None:
     if master:
         print(f"model params: {model.num_params() / 1e6:.1f}M")
 
+    # --- resume: load weights into the plain model BEFORE FSDP wrap ---
+    start_step = 0
+    resume_path = cfg.get("resume_from")
+    resume_ck = None
+    if resume_path and os.path.exists(resume_path):
+        resume_ck = torch.load(resume_path, map_location=device)
+        sd = {k.replace("_orig_mod.", "").replace("module.", ""): v
+              for k, v in resume_ck["model"].items()}
+        model.load_state_dict(sd, strict=True)
+        start_step = int(resume_ck.get("step", 0))
+        if master:
+            print(f"resumed model from {resume_path} @ step {start_step}")
+
     if is_dist():
         model = wrap_fsdp(model, local_rank)
 
@@ -106,6 +119,14 @@ def main() -> None:
         fused=device.startswith("cuda"),
     )
 
+    # optimizer state only resumes in the single-process case (Colab/1-GPU);
+    # under FSDP it is sharded and re-initialized (warmup smooths the restart).
+    if resume_ck is not None and "optimizer" in resume_ck and not is_dist():
+        opt.load_state_dict(resume_ck["optimizer"])
+        if master:
+            print("resumed optimizer state")
+    resume_ck = None
+
     data = PackedDataset(cfg["data_dirs"], mcfg.max_seq_len, device=device)
     micro_bs = cfg["micro_batch_size"]
     grad_accum = cfg["grad_accum_steps"]
@@ -114,7 +135,7 @@ def main() -> None:
 
     os.makedirs(cfg["out_dir"], exist_ok=True)
     t0 = time.time()
-    for step in range(cfg["max_steps"]):
+    for step in range(start_step, cfg["max_steps"]):
         lr = get_lr(step, cfg)
         for g in opt.param_groups:
             g["lr"] = lr
@@ -141,19 +162,30 @@ def main() -> None:
                   f"{tps/1e3:.1f}k tok/s | {step * tokens_per_step / 1e9:.2f}B tok")
 
         if master and step > 0 and step % cfg["save_interval"] == 0:
-            save(model, mcfg, cfg, step)
+            save(model, opt, mcfg, cfg, step)
 
     if master:
-        save(model, mcfg, cfg, cfg["max_steps"])
+        save(model, opt, mcfg, cfg, cfg["max_steps"])
     if is_dist():
         import torch.distributed as dist
         dist.destroy_process_group()
 
 
-def save(model, mcfg, cfg, step):
+def save(model, opt, mcfg, cfg, step):
     sd = model.state_dict()
+    ckpt = {"model": sd, "config": mcfg.__dict__, "step": step}
+    if not is_dist():                       # FSDP optimizer state is sharded; skip
+        ckpt["optimizer"] = opt.state_dict()
     path = os.path.join(cfg["out_dir"], f"ckpt_{step}.pt")
-    torch.save({"model": sd, "config": mcfg.__dict__, "step": step}, path)
+    torch.save(ckpt, path)
+    # stable 'latest.pt' pointer so resume can auto-find the newest checkpoint
+    latest = os.path.join(cfg["out_dir"], "latest.pt")
+    try:
+        if os.path.islink(latest) or os.path.exists(latest):
+            os.remove(latest)
+        os.symlink(os.path.basename(path), latest)
+    except OSError:
+        pass
     print(f"saved checkpoint -> {path}")
 
 
