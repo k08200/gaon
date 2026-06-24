@@ -1,0 +1,36 @@
+# Gaon-0.6B on a single NVIDIA B200 (authorized shared box).
+# Single-GPU on purpose: avoids the multi-GPU NCCL watchdog timeout that crashed
+# the earlier 5-GPU run when a collective stalled on the shared box. One B200 is
+# plenty fast for 0.6B. bf16 (native on Blackwell); plenty of memory so no grad
+# checkpointing — chunked CE still bounds the 151,936-vocab LM-head logits.
+
+model:
+  max_seq_len: 2048
+
+dtype: bf16
+optimizer: adamw
+grad_checkpoint: false
+loss_chunk_size: 8192
+
+data_dirs:
+  - data/fineweb_edu
+  - data/fineweb_kor
+
+micro_batch_size: 12
+grad_accum_steps: 24
+# single GPU: 12*24*1*2048 = ~590k tokens/step
+
+# 0.6B Chinchilla-optimal ~= 12B tokens -> ~20k steps.
+max_steps: 20000
+warmup_steps: 200
+lr: 3.0e-4
+min_lr: 3.0e-5
+weight_decay: 0.1
+grad_clip: 1.0
+
+out_dir: checkpoints/gaon_0.6b_b200
+log_interval: 10
+save_interval: 500
+
+# resume after a disconnect/crash:
+# resume_from: checkpoints/gaon_0.6b_b200/latest.pt
