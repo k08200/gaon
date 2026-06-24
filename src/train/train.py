@@ -107,6 +107,12 @@ def main() -> None:
     torch.manual_seed(1337 + rank)
     if device.startswith("cuda"):
         torch.set_float32_matmul_precision("high")
+        # cap our share of a SHARED GPU so we don't starve other users' resident jobs
+        mf = cfg.get("max_mem_fraction")
+        if mf:
+            torch.cuda.set_per_process_memory_fraction(float(mf), local_rank)
+            if master:
+                print(f"GPU memory cap: {float(mf)*100:.0f}% of device")
 
     mcfg = ModelConfig(**cfg.get("model", {}))
     model = Gaon(mcfg).to(device)

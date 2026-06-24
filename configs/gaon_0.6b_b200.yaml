@@ -1,27 +1,27 @@
-# Gaon-0.6B on a single NVIDIA B200 (authorized shared box).
-# Single-GPU on purpose: avoids the multi-GPU NCCL watchdog timeout that crashed
-# the earlier 5-GPU run when a collective stalled on the shared box. One B200 is
-# plenty fast for 0.6B. bf16 (native on Blackwell); plenty of memory so no grad
-# checkpointing — chunked CE still bounds the 151,936-vocab LM-head logits.
+# Gaon-0.6B on a single NVIDIA B200, GPU 5 (authorized, SHARED with a colleague's
+# resident model). Single-GPU avoids the multi-GPU NCCL crash. We are a good
+# neighbor: max_mem_fraction caps our share, grad checkpointing keeps the footprint
+# small. Still ~30k+ tok/s — far faster than any free GPU.
 
 model:
   max_seq_len: 2048
 
 dtype: bf16
 optimizer: adamw
-grad_checkpoint: false
-loss_chunk_size: 8192
+grad_checkpoint: true        # tiny footprint on the shared GPU (B200 is fast enough)
+loss_chunk_size: 2048
+max_mem_fraction: 0.30       # cap at ~55GB of 183GB so the colleague keeps room
 
 data_dirs:
   - data/fineweb_edu
   - data/fineweb_kor
 
 micro_batch_size: 12
-grad_accum_steps: 24
-# single GPU: 12*24*1*2048 = ~590k tokens/step
+grad_accum_steps: 16
+# single GPU: 12*16*1*2048 = ~393k tokens/step
 
-# 0.6B Chinchilla-optimal ~= 12B tokens -> ~20k steps.
-max_steps: 20000
+# 0.6B Chinchilla-optimal ~= 12B tokens -> ~30k steps.
+max_steps: 30000
 warmup_steps: 200
 lr: 3.0e-4
 min_lr: 3.0e-5
