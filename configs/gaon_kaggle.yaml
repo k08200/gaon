@@ -1,0 +1,32 @@
+# Gaon-0.6B on a FREE Kaggle GPU (T4 / P100, 16GB), driven via the Kaggle API.
+# Same memory recipe as Colab (grad checkpoint + 8-bit AdamW + chunked CE) so 0.6B
+# fits 16GB. Checkpoints go to /kaggle/working (the kernel's saved output); the
+# next session mounts the previous output and resumes via resume_from.
+
+model:
+  max_seq_len: 1024
+
+dtype: fp16
+optimizer: adamw8bit
+grad_checkpoint: true
+loss_chunk_size: 1024
+
+data_dirs:
+  - /kaggle/working/data/fineweb_edu
+
+micro_batch_size: 8
+grad_accum_steps: 8
+
+max_steps: 185000           # 0.6B Chinchilla ~12B tokens; resume across sessions
+warmup_steps: 200
+lr: 3.0e-4
+min_lr: 3.0e-5
+weight_decay: 0.1
+grad_clip: 1.0
+
+out_dir: /kaggle/working/gaon_ckpt
+log_interval: 10
+save_interval: 200
+
+# the driver sets this to the previous run's output when chaining sessions:
+# resume_from: /kaggle/input/<prev-output>/latest.pt
