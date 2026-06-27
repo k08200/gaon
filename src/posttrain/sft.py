@@ -80,9 +80,14 @@ def _alpaca_to_messages(ex):
     ]}
 
 
-def build_sft_dataset(en_name: str, ko_name: str):
-    """Bilingual SFT mix: English chat (messages) + Korean instruct (alpaca)."""
+def build_sft_dataset(en_name: str, ko_name: str, jsonl: str | None = None):
+    """SFT data. If `jsonl` is given (our distilled set), use it; else a public mix."""
     from datasets import concatenate_datasets, load_dataset
+
+    if jsonl:
+        ds = load_dataset("json", data_files=jsonl, split="train").select_columns(["messages"])
+        print(f"SFT dataset: {len(ds):,} distilled examples ({jsonl})")
+        return ds.shuffle(seed=42)
 
     parts = []
     if en_name:
@@ -102,10 +107,11 @@ def main() -> None:
     ap.add_argument("--ckpt", required=True)
     ap.add_argument("--en-dataset", default="HuggingFaceH4/ultrachat_200k")
     ap.add_argument("--ko-dataset", default="nlpai-lab/kullm-v2")
+    ap.add_argument("--data-jsonl", default=None, help="distilled JSONL; overrides en/ko")
     ap.add_argument("--out", default="checkpoints/sft")
     ap.add_argument("--tokenizer", default="Qwen/Qwen3-0.6B")
-    ap.add_argument("--epochs", type=float, default=1.0)
-    ap.add_argument("--lr", type=float, default=1e-5)
+    ap.add_argument("--epochs", type=float, default=3.0)
+    ap.add_argument("--lr", type=float, default=2e-5)
     args = ap.parse_args()
 
     from transformers import AutoTokenizer
@@ -113,7 +119,7 @@ def main() -> None:
 
     tok = AutoTokenizer.from_pretrained(args.tokenizer)
     model = to_hf(args.ckpt, args.tokenizer)
-    ds = build_sft_dataset(args.en_dataset, args.ko_dataset)
+    ds = build_sft_dataset(args.en_dataset, args.ko_dataset, args.data_jsonl)
 
     trainer = SFTTrainer(
         model=model,
