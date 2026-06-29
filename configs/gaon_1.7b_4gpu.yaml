@@ -18,7 +18,7 @@ model:
 
 dtype: bf16
 optimizer: adamw
-grad_checkpoint: false       # FSDP shards memory -> can afford full activations -> faster
+grad_checkpoint: true        # ON: 활성값 줄여 cap 0.2에 안전하게 맞춤 (동료 보호)
 loss_chunk_size: 2048
 max_mem_fraction: 0.2        # cap ~37GB; vLLM(96GB)+우리 -> 동료 50GB 여유
 
