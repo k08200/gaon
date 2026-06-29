@@ -26,7 +26,7 @@ def main() -> None:
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
     device = "cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu")
-    dtype = torch.bfloat16 if device == "cuda" else torch.float32
+    dtype = {"cuda": torch.bfloat16, "mps": torch.float16, "cpu": torch.float32}[device]
     print(f"loading {args.model} on {device} ...", flush=True)
     tok = AutoTokenizer.from_pretrained(args.model)
     model = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype=dtype).to(device).eval()

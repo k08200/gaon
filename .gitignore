@@ -10,3 +10,4 @@ venv/
 *.safetensors
 .DS_Store
 wandb/
+.venv-mac/
