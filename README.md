@@ -15,6 +15,9 @@ of trillions of tokens — that's the capital game. The *small* Qwen models you 
 match on your own GPUs **now**, while learning every stage end to end. Same
 architecture, same pipeline; only scale (and money) differ.
 
+## Tech report
+Full write-up: [docs/TECH_REPORT.md](docs/TECH_REPORT.md) — architecture, training recipe, distillation, results, and honest limitations.
+
 ## Architecture (faithful to Qwen3)
 Decoder-only · RMSNorm (pre-norm) · RoPE · Grouped-Query Attention · **QK-Norm**
 (Qwen3-specific per-head q/k RMSNorm) · SwiGLU · tied embeddings. See
