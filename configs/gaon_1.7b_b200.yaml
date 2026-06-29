@@ -1,0 +1,40 @@
+# Gaon-1.7B from-scratch on a single B200, GPU 5 (authorized, shared).
+# Same 12B-token data as the 0.6B run -> a clean "same data, 3x params" comparison.
+# Memory recipe (grad checkpoint + chunked CE + mem cap) keeps the shared GPU safe.
+
+model:
+  hidden_size: 2048           # Qwen3-1.7B dims
+  intermediate_size: 6144
+  num_layers: 28
+  num_attn_heads: 16
+  num_kv_heads: 8
+  head_dim: 128
+  max_seq_len: 2048
+
+dtype: bf16
+optimizer: adamw
+grad_checkpoint: true
+loss_chunk_size: 2048
+max_mem_fraction: 0.35        # ~64GB cap of 183GB — leaves room for the colleague
+
+data_dirs:
+  - data/fineweb_edu
+  - data/fineweb_kor
+
+micro_batch_size: 8
+grad_accum_steps: 24
+# single GPU: 8*24*1*2048 = ~393k tokens/step  ->  12B / 393k ~= 30k steps
+
+max_steps: 30000
+warmup_steps: 200
+lr: 2.5e-4
+min_lr: 2.5e-5
+weight_decay: 0.1
+grad_clip: 1.0
+
+out_dir: checkpoints/gaon_1.7b_b200
+log_interval: 10
+save_interval: 1000
+
+# resume after a disconnect/crash:
+# resume_from: checkpoints/gaon_1.7b_b200/latest.pt
