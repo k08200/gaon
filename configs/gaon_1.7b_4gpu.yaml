@@ -20,7 +20,7 @@ dtype: bf16
 optimizer: adamw
 grad_checkpoint: false       # FSDP shards memory -> can afford full activations -> faster
 loss_chunk_size: 2048
-max_mem_fraction: 0.5        # per-GPU cap; leaves room for the resident vLLM worker
+max_mem_fraction: 0.2        # cap ~37GB; vLLM(96GB)+우리 -> 동료 50GB 여유
 
 data_dirs:
   - data/fineweb_edu
