@@ -33,8 +33,11 @@ def setup_dist():
     if not is_dist():
         return 0, 0, 1
     import torch.distributed as dist
+    from datetime import timedelta
 
-    dist.init_process_group(backend="nccl")
+    # long timeout so a transient stall (e.g. a co-located inference server briefly
+    # grabbing a shared GPU) doesn't trip the NCCL watchdog and kill the whole job.
+    dist.init_process_group(backend="nccl", timeout=timedelta(minutes=60))
     rank = int(os.environ["RANK"])
     local_rank = int(os.environ["LOCAL_RANK"])
     world = int(os.environ["WORLD_SIZE"])

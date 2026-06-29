@@ -1,0 +1,45 @@
+# Gaon-1.7B, 4x B200 FSDP (GPUs 3,4,6,7), max speed (~1 day).
+# Launch:
+#   CUDA_VISIBLE_DEVICES=3,4,6,7 torchrun --standalone --nproc_per_node=4 \
+#     -m src.train.train --config configs/gaon_1.7b_4gpu.yaml
+# FSDP shards params/optimizer across 4 GPUs, so grad checkpointing is OFF (faster)
+# and memory per GPU stays well under the shared vLLM workers' free space.
+# NCCL timeout is 60min (in code) so a co-located inference burst won't crash the job;
+# frequent checkpoints + resume_from recover if it ever does.
+
+model:
+  hidden_size: 2048
+  intermediate_size: 6144
+  num_layers: 28
+  num_attn_heads: 16
+  num_kv_heads: 8
+  head_dim: 128
+  max_seq_len: 2048
+
+dtype: bf16
+optimizer: adamw
+grad_checkpoint: false       # FSDP shards memory -> can afford full activations -> faster
+loss_chunk_size: 2048
+max_mem_fraction: 0.5        # per-GPU cap; leaves room for the resident vLLM worker
+
+data_dirs:
+  - data/fineweb_edu
+  - data/fineweb_kor
+
+micro_batch_size: 8
+grad_accum_steps: 6
+# 4 GPUs: 8*6*4*2048 = ~393k tokens/step  ->  12B / 393k ~= 30k steps
+
+max_steps: 30000
+warmup_steps: 200
+lr: 2.5e-4
+min_lr: 2.5e-5
+weight_decay: 0.1
+grad_clip: 1.0
+
+out_dir: checkpoints/gaon_1.7b_4gpu
+log_interval: 10
+save_interval: 500           # checkpoint often (crash-resume safety on shared GPUs)
+
+# set on a resume-after-crash relaunch:
+# resume_from: checkpoints/gaon_1.7b_4gpu/latest.pt
