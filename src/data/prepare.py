@@ -25,7 +25,8 @@ import numpy as np
 DATASETS = {
     "fineweb-edu": ("HuggingFaceFW/fineweb-edu", "sample-10BT", "text"),
     "fineweb-2-kor": ("HuggingFaceFW/fineweb-2", "kor_Hang", "text"),
-    "the-stack": ("bigcode/the-stack-v2-dedup", None, "content"),
+    "the-stack": ("bigcode/the-stack-v2-dedup", None, "content"),  # gated (needs HF auth)
+    "codeparrot": ("codeparrot/codeparrot-clean", None, "content"),  # open, dedup Python
 }
 
 DTYPE = np.uint32  # Qwen3 vocab (151936) fits in uint32

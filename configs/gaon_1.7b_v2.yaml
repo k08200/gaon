@@ -1,0 +1,44 @@
+# Gaon-1.7B v2 — quality run. Chinchilla-optimal ~34B training tokens + code data.
+# 4x B200 FSDP (GPUs 3,4,6,7). Adds Python code (codeparrot) to fix the coding
+# weakness; ~2.4 epochs over ~14B unique tokens (EN 7.5B + KO 3.75B + code 3B).
+# Disk-safe: keep_last_checkpoints prunes old ckpts (a 60-ckpt pileup filled 1.6TB once).
+# Good-neighbor: mem cap 0.2 + grad_checkpoint -> ~22GB/GPU, colleague vLLM stays safe.
+
+model:
+  hidden_size: 2048
+  intermediate_size: 6144
+  num_layers: 28
+  num_attn_heads: 16
+  num_kv_heads: 8
+  head_dim: 128
+  max_seq_len: 2048
+
+dtype: bf16
+optimizer: adamw
+grad_checkpoint: true
+loss_chunk_size: 2048
+max_mem_fraction: 0.2
+
+data_dirs:
+  - data/fineweb_edu
+  - data/fineweb_kor
+  - data/codeparrot
+
+micro_batch_size: 8
+grad_accum_steps: 6
+# 4 GPUs: 8*6*4*2048 = ~393k tokens/step  ->  34B / 393k ~= 86,500 steps (~2.4 epochs)
+
+max_steps: 86500
+warmup_steps: 500
+lr: 2.5e-4
+min_lr: 2.5e-5
+weight_decay: 0.1
+grad_clip: 1.0
+
+out_dir: checkpoints/gaon_1.7b_v2
+log_interval: 10
+save_interval: 2000
+keep_last_checkpoints: 3        # disk safety on the shared box
+
+# set on a resume-after-crash relaunch:
+# resume_from: checkpoints/gaon_1.7b_v2/latest.pt

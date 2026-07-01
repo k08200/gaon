@@ -35,9 +35,11 @@ def setup_dist():
     import torch.distributed as dist
     from datetime import timedelta
 
-    # long timeout so a transient stall (e.g. a co-located inference server briefly
-    # grabbing a shared GPU) doesn't trip the NCCL watchdog and kill the whole job.
-    dist.init_process_group(backend="nccl", timeout=timedelta(minutes=60))
+    # Moderate timeout: long enough to ride out a brief co-located inference burst,
+    # short enough that a SUSTAINED grab (a colleague's vLLM serving for an hour) makes
+    # us crash-and-resume fast instead of stalling — holding GPU memory — the whole time.
+    # Resume is correct now (full-state-dict checkpoints), so a crash is cheap.
+    dist.init_process_group(backend="nccl", timeout=timedelta(minutes=20))
     rank = int(os.environ["RANK"])
     local_rank = int(os.environ["LOCAL_RANK"])
     world = int(os.environ["WORLD_SIZE"])
@@ -195,18 +197,33 @@ def main() -> None:
             print(f"step {step:6d} | loss {loss_accum:.4f} | lr {lr:.2e} | "
                   f"{tps/1e3:.1f}k tok/s | {step * tokens_per_step / 1e9:.2f}B tok")
 
-        if master and step > 0 and step % cfg["save_interval"] == 0:
-            save(model, opt, mcfg, cfg, step)
+        # save() runs on ALL ranks under FSDP (the full-state-dict gather is a
+        # collective — every rank must participate); only master writes the file.
+        if step > 0 and step % cfg["save_interval"] == 0:
+            save(model, opt, mcfg, cfg, step, master)
 
-    if master:
-        save(model, opt, mcfg, cfg, cfg["max_steps"])
+    save(model, opt, mcfg, cfg, cfg["max_steps"], master)
     if is_dist():
         import torch.distributed as dist
         dist.destroy_process_group()
 
 
-def save(model, opt, mcfg, cfg, step):
-    sd = model.state_dict()
+def save(model, opt, mcfg, cfg, step, master=True):
+    # Under FSDP each rank holds only a 1/N shard of every parameter. A plain
+    # model.state_dict() would save just the local shard -> a corrupt checkpoint
+    # (this exact bug gave loss 11.9 on resume). FULL_STATE_DICT gathers the full,
+    # unsharded weights onto rank 0 (offloaded to CPU). It is a COLLECTIVE: all
+    # ranks must call it, but only rank 0 receives the populated dict.
+    if is_dist():
+        from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+        from torch.distributed.fsdp import StateDictType, FullStateDictConfig
+        save_policy = FullStateDictConfig(offload_to_cpu=True, rank0_only=True)
+        with FSDP.state_dict_type(model, StateDictType.FULL_STATE_DICT, save_policy):
+            sd = model.state_dict()
+    else:
+        sd = model.state_dict()
+    if not master:                          # non-master ranks only join the gather
+        return
     ckpt = {"model": sd, "config": mcfg.__dict__, "step": step}
     if not is_dist():                       # FSDP optimizer state is sharded; skip
         ckpt["optimizer"] = opt.state_dict()
@@ -221,6 +238,21 @@ def save(model, opt, mcfg, cfg, step):
     except OSError:
         pass
     print(f"saved checkpoint -> {path}")
+
+    # Disk safety: keep only the most recent N checkpoints. Intermediate ckpts
+    # exist for crash-resume; on a shared box, unbounded accumulation fills the
+    # disk (60 * 8GB filled 1.6TB once). 0/unset = keep all.
+    import glob
+    import re
+    keep = int(cfg.get("keep_last_checkpoints", 0))
+    if keep > 0:
+        cks = glob.glob(os.path.join(cfg["out_dir"], "ckpt_*.pt"))
+        cks.sort(key=lambda p: int(re.search(r"ckpt_(\d+)\.pt", os.path.basename(p)).group(1)))
+        for old in cks[:-keep]:
+            try:
+                os.remove(old)
+            except OSError:
+                pass
 
 
 class _null:
