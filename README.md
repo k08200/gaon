@@ -45,7 +45,39 @@ src/eval/           generate.py (sampling), chat.py (REPL), benchmark.py
 scripts/            sanity_check.py, verify_ckpt.py, test_chat.py, prepare_mixture.sh
 ```
 
-## Reproduce
+## Usage (chat with a trained model)
+
+Point `src/eval/chat.py` at any instruction-tuned checkpoint directory — a local
+HF-format folder, e.g. `checkpoints/gaon-1.7b-instruct/`. Works on CPU, Apple
+Silicon (MPS), or CUDA; picks the device automatically.
+
+```bash
+pip install -r requirements.txt
+
+# interactive REPL — type a message, get a reply, 'exit' to quit
+python -m src.eval.chat --model checkpoints/gaon-1.7b-instruct
+
+# smaller/faster model
+python -m src.eval.chat --model checkpoints/gaon-0.6b-instruct
+
+# on the training box: keep off the GPU that's mid-run
+CUDA_VISIBLE_DEVICES=3 .venv/bin/python -m src.eval.chat --model checkpoints/sft
+
+# tune sampling
+python -m src.eval.chat --model checkpoints/gaon-1.7b-instruct \
+    --max-new 512 --temperature 0.5
+
+# non-interactive batch of test prompts (no REPL)
+python -m scripts.test_chat checkpoints/gaon-1.7b-instruct
+
+# sanity-check a raw pretraining checkpoint (reload + score, not chat-ready)
+python -m scripts.verify_ckpt checkpoints/gaon_1.7b_v2/latest.pt
+```
+
+Each turn is independent (no conversation history) — small models drift on long
+context, so keep prompts self-contained.
+
+## Reproduce (train from scratch)
 ```bash
 pip install -r requirements.txt
 python scripts/sanity_check.py                                        # correctness (seconds)
